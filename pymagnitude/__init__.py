@@ -74,11 +74,6 @@ try:
 except NameError:
     xrange = range
 
-# Import AllenNLP
-sys.path.append(os.path.dirname(__file__) + '/third_party/')
-sys.path.append(os.path.dirname(__file__) + '/third_party_mock/')
-from pymagnitude.third_party.allennlp.commands.elmo import ElmoEmbedder
-
 # Import SQLite
 try:
     sys.path.append(os.path.dirname(__file__) + '/third_party/')
@@ -1802,8 +1797,14 @@ build the appropriate indexes into the `.magnitude` file.")
 
     def get_elmo_embedder(self, log=True):
         """Gets an ElmoEmbedder of the vectors from the database."""
+        # Import AllenNLP (this import has side-effects!)
+        sys.path.append(os.path.dirname(__file__) + '/third_party/')
+        sys.path.append(os.path.dirname(__file__) + '/third_party_mock/')
+        from pymagnitude.third_party.allennlp.commands.elmo import ElmoEmbedder
+        
         meta_1_chunks = self.get_meta_chunks(1)
         meta_2_chunks = self.get_meta_chunks(2)
+        
         if self._elmo_embedder is None:
             logged = False
             while True:

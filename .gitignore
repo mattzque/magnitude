@@ -1,6 +1,5 @@
 # Test files
 w2v.magnitude
-elmo.magnitude
 
 # Compiled python modules.
 *.pyc

@@ -40,7 +40,6 @@ Test Python 2:
   stage: Test
   script:
     - apt-get install python-pip -y
-    - pip2 install torch\>=0.4.1 # This is not in requirements.txt so must be installed like this
     - pip2 install -U pip setuptools
     - python2 setup.py install
     - pip install gensim
@@ -66,12 +65,6 @@ Test Python 2:
     - python2 -m pymagnitude.converter -i tests/models/zero.txt -o out.magnitude -s -a
     - python2 -m pymagnitude.converter -i tests/models/large.txt -o out.magnitude -s -a
     - python2 -m pymagnitude.converter -i tests/models/word2vec.bin -o w2v.magnitude
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -s
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -s -a
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude -s
-    - python2 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude -a
     - ls
     - python2 -m tests.tests -i GoogleNews-vectors-negative300.light.magnitude -s GoogleNews-vectors-negative300.medium.magnitude -a GoogleNews-vectors-negative300.heavy.magnitude -- -v
 
@@ -89,7 +82,6 @@ Test Python 3:
     - export LD_LIBRARY_PATH=$(pwd)/Python-3.7.1:$LD_LIBRARY_PATH
     - echo $LD_LIBRARY_PATH
     - curl https://bootstrap.pypa.io/get-pip.py | python3.7
-    - python3.7 -m pip install torch\>=0.4.1 # This is not in requirements.txt so must be installed like this
     - python3.7 -m pip install -U wheel setuptools # TEMP: removing upgrading of pip here, because the newest one is broken for Python 3
     - python3.7 setup.py install
     - python3.7 -m pip install gensim
@@ -115,12 +107,6 @@ Test Python 3:
     - python3.7 -m pymagnitude.converter -i tests/models/zero.txt -o out.magnitude -s -a
     - python3.7 -m pymagnitude.converter -i tests/models/large.txt -o out.magnitude -s -a
     - python3.7 -m pymagnitude.converter -i tests/models/word2vec.bin -o w2v.magnitude
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -s
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -s -a
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude -s
-    - python3.7 -m pymagnitude.converter -i tests/models/elmo_weights.hdf5 -o elmo.magnitude -v w2v.magnitude -a
     - ls
     - python3.7 -m tests.tests -i GoogleNews-vectors-negative300.light.magnitude -s GoogleNews-vectors-negative300.medium.magnitude -a GoogleNews-vectors-negative300.heavy.magnitude -- -v
 

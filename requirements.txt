@@ -1,5 +1,0 @@
-numpy>=1.14.0
-xxhash>=1.0.1
-fasteners>=0.14.1
-lz4>=1.0.0
-h5py>=2.8.0

@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import os
 import io
+import sqlite3
 import sys
 import argparse
 import lz4.frame
@@ -22,22 +23,6 @@ try:
     from itertools import izip
 except ImportError:
     izip = zip
-
-# Import AllenNLP
-sys.path.append(os.path.dirname(__file__) + '/third_party/')
-sys.path.append(os.path.dirname(__file__) + '/third_party_mock/')
-
-# Import SQLite
-try:
-    sys.path.append(os.path.dirname(__file__) + '/third_party/internal/')
-    from pymagnitude.third_party.internal.pysqlite2 import dbapi2 as sqlite3
-    db = sqlite3.connect(':memory:')
-    db.close()
-    SQLITE_LIB = 'internal'
-except BaseException:
-    import sqlite3
-    SQLITE_LIB = 'system'
-
 
 from pymagnitude.converter_shared import DEFAULT_PRECISION
 from pymagnitude.converter_shared import DEFAULT_NGRAM_BEG
@@ -78,7 +63,7 @@ from pymagnitude.converter_shared import ibatch
 def convert(input_file_path, output_file_path=None,
             precision=DEFAULT_PRECISION, subword=False,
             subword_start=DEFAULT_NGRAM_BEG,
-            subword_end=DEFAULT_NGRAM_END)
+            subword_end=DEFAULT_NGRAM_END):
 
     files_to_remove = []
     subword = int(subword)

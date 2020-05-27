@@ -1,5 +1,12 @@
-# Magnitude fork that reduces dependencies
+# Magnitude fork that only supports Word2Vec, GloVe and fastText embeddings
 
-This repository has a couple dependency changes to the excellent Magnitude project - Torch, AllenNLP (ELMo) and Annoy dependencies are removed. This simplifies the library to only support Word2Vec, GloVe and fastText embeddings. most_similar_approx methods are removed but all other functionality is retained.
+This repository makes the following changes to the excellent Magnitude project: 
 
-See Magnitude project for more information and links to pre-trained models: https://github.com/plasticityai/magnitude
+- Project simplified to only support Word2Vec, GloVe and fastText embeddings
+- Approximate indexing/search methods removed
+- Annoy, AllenNLP (ELMo), Torch dependencies are removed
+- Removed internal SQLite related libraries (pysqlite, apsw) and use system SQLite package
+- Removed logic to download and stream models. Models must all be locally available, remote servers will not be checked.
+- Build process simplified to use PyPi dependencies
+
+See Magnitude project for documentation and links to pre-trained models: https://github.com/plasticityai/magnitude

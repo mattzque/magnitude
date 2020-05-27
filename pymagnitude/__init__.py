@@ -23,7 +23,6 @@ import xxhash
 import numpy as np
 import uuid
 
-from annoy import AnnoyIndex
 from copy import deepcopy
 from fasteners import InterProcessLock
 from itertools import cycle, islice, chain, product, tee
@@ -36,7 +35,6 @@ from pymagnitude.converter_shared import CONVERTER_VERSION
 from pymagnitude.converter_shared import fast_md5_file
 from pymagnitude.converter_shared import char_ngrams
 from pymagnitude.converter_shared import norm_matrix
-from pymagnitude.converter_shared import unroll_elmo
 from pymagnitude.converter_shared import KeyList
 from pymagnitude.third_party.repoze.lru import lru_cache
 
@@ -77,7 +75,6 @@ except NameError:
 # Import AllenNLP
 sys.path.append(os.path.dirname(__file__) + '/third_party/')
 sys.path.append(os.path.dirname(__file__) + '/third_party_mock/')
-from pymagnitude.third_party.allennlp.commands.elmo import ElmoEmbedder
 
 # Import SQLite
 try:
@@ -363,10 +360,6 @@ class Magnitude(object):
             "SELECT value FROM magnitude_format WHERE key='version'") \
             .fetchall()
         self.version = version_query[0][0] if len(version_query) > 0 else 1
-        elmo_query = self._db().execute(
-            "SELECT value FROM magnitude_format WHERE key='elmo'") \
-            .fetchall()
-        self.elmo = len(elmo_query) > 0 and elmo_query[0][0]
         if ngram_oov is None:
             self.ngram_oov = not(self._is_lm())
         else:
@@ -409,14 +402,6 @@ class Magnitude(object):
             self.subword_end = self._db().execute(
                 "SELECT value FROM magnitude_format WHERE key='subword_end'") \
                 .fetchall()[0][0]
-        approx_query = self._db().execute(
-            "SELECT value FROM magnitude_format WHERE key='approx'") \
-            .fetchall()
-        self.approx = len(approx_query) > 0 and approx_query[0][0]
-        if self.approx:
-            self.approx_trees = self._db().execute(
-                "SELECT value FROM magnitude_format WHERE key='approx_trees'")\
-                .fetchall()[0][0]
         self.dim = self.emb_dim + self.placeholders
         self.highest_entropy_dimensions = [row[0] for row in self._db().execute(
             "SELECT value FROM magnitude_format WHERE key='entropy'")
@@ -448,26 +433,12 @@ class Magnitude(object):
         # Start creating mmap in background
         self.setup_for_mmap = False
         self._all_vectors = None
-        self._approx_index = None
-        self._elmo_embedder = None
         if self.eager:
             mmap_thread = threading.Thread(target=self.get_vectors_mmap,
                                            args=(False,))
             self._threads.append(mmap_thread)
             mmap_thread.daemon = True
             mmap_thread.start()
-            if self.approx:
-                approx_mmap_thread = threading.Thread(
-                    target=self.get_approx_index, args=(False,))
-                self._threads.append(approx_mmap_thread)
-                approx_mmap_thread.daemon = True
-                approx_mmap_thread.start()
-            if self.elmo:
-                elmo_thread = threading.Thread(
-                    target=self.get_elmo_embedder, args=(False,))
-                self._threads.append(elmo_thread)
-                elmo_thread.daemon = True
-                elmo_thread.start()
 
         # Create cached methods
         if self.lazy_loading <= 0:
@@ -523,16 +494,10 @@ class Magnitude(object):
 
         if self.eager and blocking:
             self.get_vectors_mmap()  # Wait for mmap to be available
-            if self.approx:
-                self.get_approx_index()  # Wait for approx mmap to be available
-            if self.elmo:
-                self.get_elmo_embedder()  # Wait for approx mmap to be available
 
     def _setup_for_mmap(self):
         # Setup variables for get_vectors_mmap()
         self._all_vectors = None
-        self._approx_index = None
-        self._elmo_embedder = None
         if not self.memory_db:
             self.db_hash = fast_md5_file(self.path, stream=self.stream)
         else:
@@ -543,37 +508,10 @@ class Magnitude(object):
              ]).encode('utf-8')).hexdigest()
         self.path_to_mmap = os.path.join(self.temp_dir,
                                          self.md5 + '.magmmap')
-        self.path_to_approx_mmap = os.path.join(self.temp_dir,
-                                                self.md5 + '.approx.magmmap')
-        self.path_to_elmo_w_mmap = os.path.join(self.temp_dir,
-                                                self.md5 + '.elmo.hdf5.magmmap')
-        self.path_to_elmo_o_mmap = os.path.join(self.temp_dir,
-                                                self.md5 + '.elmo.json.magmmap')
         if self.path_to_mmap not in Magnitude.MMAP_THREAD_LOCK:
             Magnitude.MMAP_THREAD_LOCK[self.path_to_mmap] = threading.Lock()
-        if self.path_to_approx_mmap not in Magnitude.MMAP_THREAD_LOCK:
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_approx_mmap] = \
-                threading.Lock()
-        if self.path_to_elmo_w_mmap not in Magnitude.MMAP_THREAD_LOCK:
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_elmo_w_mmap] = \
-                threading.Lock()
-        if self.path_to_elmo_o_mmap not in Magnitude.MMAP_THREAD_LOCK:
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_elmo_o_mmap] = \
-                threading.Lock()
         self.MMAP_THREAD_LOCK = Magnitude.MMAP_THREAD_LOCK[self.path_to_mmap]
         self.MMAP_PROCESS_LOCK = InterProcessLock(self.path_to_mmap + '.lock')
-        self.APPROX_MMAP_THREAD_LOCK = \
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_approx_mmap]
-        self.APPROX_MMAP_PROCESS_LOCK = \
-            InterProcessLock(self.path_to_approx_mmap + '.lock')
-        self.ELMO_W_MMAP_THREAD_LOCK = \
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_elmo_w_mmap]
-        self.ELMO_W_MMAP_PROCESS_LOCK = \
-            InterProcessLock(self.path_to_elmo_w_mmap + '.lock')
-        self.ELMO_O_MMAP_THREAD_LOCK = \
-            Magnitude.MMAP_THREAD_LOCK[self.path_to_elmo_o_mmap]
-        self.ELMO_O_MMAP_PROCESS_LOCK = \
-            InterProcessLock(self.path_to_elmo_o_mmap + '.lock')
         self.setup_for_mmap = True
 
     def sqlite3_connect(self, downloader, *args, **kwargs):
@@ -867,22 +805,12 @@ class Magnitude(object):
 
     def _is_lm(self):
         """Check if using a language model"""
-        return self.elmo
+        return False
 
     def _process_lm_output(self, q, normalized):
         """Process the output from a language model"""
         zero_d = not(isinstance(q, list))
         one_d = not(zero_d) and (len(q) == 0 or not(isinstance(q[0], list)))
-        if self.elmo:
-            if zero_d:
-                r_val = np.concatenate(self.get_elmo_embedder().embed_batch(
-                    [[q]])[0], axis=1).flatten()
-            elif one_d:
-                r_val = np.concatenate(self.get_elmo_embedder().embed_batch(
-                    [q])[0], axis=1)
-            else:
-                r_val = [np.concatenate(row, axis=1)
-                         for row in self.get_elmo_embedder().embed_batch(q)]
         if normalized:
             if zero_d:
                 r_val = r_val / np.linalg.norm(r_val)
@@ -1264,10 +1192,7 @@ class Magnitude(object):
     def unroll(self, v):
         """ Unrolls a vector if it was concatenated from its base model
         form. """
-        if self.elmo and isinstance(v, np.ndarray):
-            return unroll_elmo(v, self.placeholders)
-        else:
-            return v
+        return v
 
     def index(self, q, return_vector=True):
         """Gets a key for an index or multiple indices."""
@@ -1381,8 +1306,7 @@ class Magnitude(object):
             effort=1.0):
         """Runs a database query to find vectors close to vector."""
         COSMUL = method == '3cosmul'  # noqa: N806
-        APPROX = method == 'approx'  # noqa: N806
-        DISTANCE = not COSMUL and not APPROX  # noqa: N806
+        DISTANCE = not COSMUL # noqa: N806
 
         exclude_keys = {self._key_t(exclude_key)
                         for exclude_key in exclude_keys}
@@ -1393,7 +1317,7 @@ class Magnitude(object):
         filter_topn = self.max_duplicate_keys * (topn + len(exclude_keys))
 
         # Find mean unit vector
-        if (DISTANCE or APPROX) and (len(negative) > 0 or len(positive) > 1):
+        if (DISTANCE) and (len(negative) > 0 or len(positive) > 1):
             positive_vecs = np.sum(
                 self._query_numpy(
                     positive,
@@ -1412,7 +1336,7 @@ class Magnitude(object):
             mean_vector = (positive_vecs + negative_vecs) / \
                 float(len(positive) + len(negative))
             mean_unit_vector = mean_vector / np.linalg.norm(mean_vector)
-        elif (DISTANCE or APPROX):
+        elif (DISTANCE):
             mean_unit_vector = self._query_numpy(
                 positive[0], normalized=True)
         elif COSMUL:
@@ -1463,17 +1387,6 @@ class Magnitude(object):
             topn_indices = heapq.nlargest(filter_topn, filtered_indices,
                                           key=lambda x: x[0])
             topn_indices = iter(topn_indices)
-        elif APPROX:
-            approx_index = self.get_approx_index()
-            search_k = int(effort * filter_topn * self.approx_trees)
-            nns = approx_index.get_nns_by_vector(
-                mean_unit_vector,
-                filter_topn,
-                search_k=search_k,
-                include_distances=True)
-            topn_indices = izip(nns[1], nns[0])
-            topn_indices = imap(lambda di: (1 - di[0] ** 2 * .5, di[1]),
-                                topn_indices)
 
         # Tee topn_indices iterator
         topn_indices_1, topn_indices_2 = tee(topn_indices)
@@ -1562,44 +1475,6 @@ class Magnitude(object):
                 negative),
             return_similarities=return_similarities,
             method='3cosmul')
-        return results
-
-    @lru_cache(DEFAULT_LRU_CACHE_SIZE, ignore_unhashable_args=True)
-    def most_similar_approx(
-            self,
-            positive,
-            negative=[],
-            topn=10,
-            min_similarity=None,
-            return_similarities=True,
-            effort=1.0):
-        """Approximates the topn most similar vectors under or equal to max
-        distance using Annoy:
-        https://github.com/spotify/annoy
-        """
-        if not self.approx:
-            raise RuntimeError("The `.magnitude` file you are using does not \
-support the `most_similar_approx` function. If you are using a pre-built \
-`.magnitude` file, visit Magnitude's git repository page's README and download \
-the 'Heavy' model instead. If you converted this `.magnitude` file yourself \
-you will need to re-convert the file passing the `-a` flag to the converter to \
-build the appropriate indexes into the `.magnitude` file.")
-
-        positive, negative = self._handle_pos_neg_args(positive, negative)
-
-        effort = min(max(0, effort), 1.0)
-
-        results = self._db_query_similarity(
-            positive=positive,
-            negative=negative,
-            min_similarity=min_similarity,
-            topn=topn,
-            exclude_keys=self._exclude_set(
-                positive,
-                negative),
-            return_similarities=return_similarities,
-            method='approx',
-            effort=effort)
         return results
 
     @lru_cache(DEFAULT_LRU_CACHE_SIZE, ignore_unhashable_args=True)
@@ -1696,34 +1571,6 @@ build the appropriate indexes into the `.magnitude` file.")
         else:
             yield (0, self.length, all_vectors)
 
-    def get_approx_index_chunks(self):
-        """Gets decompressed chunks of the AnnoyIndex of the vectors from
-        the database."""
-        try:
-            db = self._db(force_new=True, downloader=True)
-            num_chunks = db.execute(
-                """
-                    SELECT COUNT(rowid)
-                    FROM `magnitude_approx`
-                    WHERE trees = ?
-                """, (self.approx_trees,)).fetchall()[0][0]
-            with lz4.frame.LZ4FrameDecompressor() as decompressor:
-                chunks = db.execute(
-                    """
-                        SELECT rowid,index_file
-                        FROM `magnitude_approx`
-                        WHERE trees = ?
-                    """, (self.approx_trees,))
-                for chunk in chunks:
-                    yield num_chunks, decompressor.decompress(chunk[1])
-                    if self.closed:
-                        return
-        except Exception as e:
-            if self.closed:
-                pass
-            else:
-                raise e
-
     def get_meta_chunks(self, meta_index):
         """Gets decompressed chunks of a meta file embedded in
         the database."""
@@ -1749,139 +1596,6 @@ build the appropriate indexes into the `.magnitude` file.")
                 pass
             else:
                 raise e
-
-    def get_approx_index(self, log=True):
-        """Gets an AnnoyIndex of the vectors from the database."""
-        chunks = self.get_approx_index_chunks()
-        if self._approx_index is None:
-            logged = False
-            while True:
-                if not self.setup_for_mmap:
-                    self._setup_for_mmap()
-                try:
-                    sys.stdout.flush()
-                    sys.stderr.flush()
-                    approx_index = AnnoyIndex(self.emb_dim, metric='angular')
-                    approx_index.load(self.path_to_approx_mmap)
-                    self._approx_index = approx_index
-                    break
-                except BaseException:
-                    sys.stdout.flush()
-                    sys.stderr.flush()
-                    if not logged and log and self.log:
-                        _log("Need to build the approximate index."
-                             " This may take some time...but it only "
-                             "needs to be done once (even between "
-                             "multiple runs of this program). The result"
-                             " will get stashed into a temporary "
-                             "directory on your "
-                             "computer.")
-                    path_to_approx_mmap_temp = self.path_to_approx_mmap \
-                        + '.tmp'
-                    tlock = self.APPROX_MMAP_THREAD_LOCK.acquire(False)
-                    plock = self.APPROX_MMAP_PROCESS_LOCK.acquire(0)
-                    if tlock and plock:
-                        try:
-                            with open(path_to_approx_mmap_temp, "w+b") \
-                                    as mmap_file:
-                                last_p = 0
-                                for i, (length, chunk) in enumerate(chunks):
-                                    progress = round((float(i) / float(length)) * 100, 2)  # noqa
-                                    if log and self.log and int(progress) > last_p:  # noqa
-                                        last_p = int(progress)
-                                        _log("Progress: %.2f%%" %
-                                             (progress,))
-                                    mmap_file.write(chunk)
-                            if not self.closed:
-                                os.rename(path_to_approx_mmap_temp,
-                                          self.path_to_approx_mmap)
-                            else:
-                                return
-                        finally:
-                            self.APPROX_MMAP_THREAD_LOCK.release()
-                            try:
-                                self.APPROX_MMAP_PROCESS_LOCK.release()
-                            except BaseException:
-                                pass
-                sleep(1)  # Block before trying again
-        return self._approx_index
-
-    def get_elmo_embedder(self, log=True):
-        """Gets an ElmoEmbedder of the vectors from the database."""
-        meta_1_chunks = self.get_meta_chunks(1)
-        meta_2_chunks = self.get_meta_chunks(2)
-        if self._elmo_embedder is None:
-            logged = False
-            while True:
-                if not self.setup_for_mmap:
-                    self._setup_for_mmap()
-                try:
-                    if len(self.devices) > 0:
-                        elmo_embedder = ElmoEmbedder(
-                            self.path_to_elmo_o_mmap, self.path_to_elmo_w_mmap,
-                            cuda_device=self.devices[0])
-                    else:
-                        elmo_embedder = ElmoEmbedder(
-                            self.path_to_elmo_o_mmap, self.path_to_elmo_w_mmap)
-                    self._elmo_embedder = elmo_embedder
-                    break
-                except BaseException:
-                    if not logged and log and self.log:
-                        _log("Need to build ElmoEmbedder. "
-                             "This may take some time...but it only "
-                             "needs to be done once (even between "
-                             "multiple runs of this program). The result"
-                             " will get stashed into a temporary "
-                             "directory on your "
-                             "computer.")
-                    path_to_elmo_w_mmap_temp = self.path_to_elmo_w_mmap \
-                        + '.tmp'
-                    path_to_elmo_o_mmap_temp = self.path_to_elmo_o_mmap \
-                        + '.tmp'
-                    tlock_w = self.ELMO_W_MMAP_THREAD_LOCK.acquire(False)
-                    plock_w = self.ELMO_W_MMAP_PROCESS_LOCK.acquire(0)
-                    tlock_o = self.ELMO_O_MMAP_THREAD_LOCK.acquire(False)
-                    plock_o = self.ELMO_O_MMAP_PROCESS_LOCK.acquire(0)
-                    if tlock_w and plock_w and tlock_o and plock_o:
-                        try:
-                            with open(path_to_elmo_w_mmap_temp, "w+b") \
-                                    as mmap_file:
-                                last_p = 0
-                                for i, (length, chunk) \
-                                        in enumerate(meta_1_chunks):
-                                    progress = round((float(i) / float(length)) * 100, 2)  # noqa
-                                    if log and self.log and int(progress) > last_p:  # noqa
-                                        last_p = int(progress)
-                                        _log("Progress: %.2f%%" %
-                                             (progress,))
-                                    mmap_file.write(chunk)
-                            if not self.closed:
-                                os.rename(path_to_elmo_w_mmap_temp,
-                                          self.path_to_elmo_w_mmap)
-                            else:
-                                return
-                            with open(path_to_elmo_o_mmap_temp, "w+b") \
-                                    as mmap_file:
-                                for _, chunk in meta_2_chunks:
-                                    mmap_file.write(chunk)
-                            if not self.closed:
-                                os.rename(path_to_elmo_o_mmap_temp,
-                                          self.path_to_elmo_o_mmap)
-                            else:
-                                return
-                        finally:
-                            self.ELMO_W_MMAP_THREAD_LOCK.release()
-                            try:
-                                self.ELMO_W_MMAP_PROCESS_LOCK.release()
-                            except BaseException:
-                                pass
-                            self.ELMO_O_MMAP_THREAD_LOCK.release()
-                            try:
-                                self.ELMO_O_MMAP_PROCESS_LOCK.release()
-                            except BaseException:
-                                pass
-                sleep(1)  # Block before trying again
-        return self._elmo_embedder
 
     def _iter(self, put_cache, downloader=False):
         """Yields keys and vectors for all vectors in the store."""
@@ -1946,36 +1660,11 @@ build the appropriate indexes into the `.magnitude` file.")
             gc.collect()
         except BaseException:
             pass
-        try:
-            self._approx_index.unload()
-        except BaseException:
-            pass
         if (hasattr(self, 'MMAP_PROCESS_LOCK') and
             hasattr(self.MMAP_PROCESS_LOCK, 'lockfile') and
                 self.MMAP_PROCESS_LOCK.lockfile is not None):
             try:
                 self.MMAP_PROCESS_LOCK.lockfile.close()
-            except BaseException:
-                pass
-        if (hasattr(self, 'APPROX_MMAP_PROCESS_LOCK') and
-            hasattr(self.APPROX_MMAP_PROCESS_LOCK, 'lockfile') and
-                self.APPROX_MMAP_PROCESS_LOCK.lockfile is not None):
-            try:
-                self.APPROX_MMAP_PROCESS_LOCK.lockfile.close()
-            except BaseException:
-                pass
-        if (hasattr(self, 'ELMO_W_MMAP_PROCESS_LOCK') and
-            hasattr(self.ELMO_W_MMAP_PROCESS_LOCK, 'lockfile') and
-                self.ELMO_W_MMAP_PROCESS_LOCK.lockfile is not None):
-            try:
-                self.ELMO_W_MMAP_PROCESS_LOCK.lockfile.close()
-            except BaseException:
-                pass
-        if (hasattr(self, 'ELMO_O_MMAP_PROCESS_LOCK') and
-            hasattr(self.ELMO_O_MMAP_PROCESS_LOCK, 'lockfile') and
-                self.ELMO_O_MMAP_PROCESS_LOCK.lockfile is not None):
-            try:
-                self.ELMO_O_MMAP_PROCESS_LOCK.lockfile.close()
             except BaseException:
                 pass
 

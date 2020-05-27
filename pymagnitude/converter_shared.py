@@ -62,36 +62,6 @@ def char_ngrams(key, beg, end):
 def norm_matrix(m):
     return m / np.linalg.norm(m, axis=1).reshape((-1, 1))
 
-
-def norm_elmo(e):
-    for i in range(e.shape[0]):
-        e[i, :, :] = norm_matrix(e[i, :, :])
-
-
-def unroll_elmo(v, placeholders):
-    if len(v.shape) <= 2:
-        if placeholders > 0:
-            if len(v.shape) == 1:
-                v = v[:-placeholders]
-            else:
-                v = v[:, :-placeholders]
-        return np.asarray(np.split(v, 3, axis=-1))
-    elif len(v.shape) == 3:
-        result = np.zeros(
-            (v.shape[0], 3, v.shape[1], int(
-                v.shape[2] / 3)), dtype=v.dtype)
-        for i in xrange(v.shape[0]):
-            if placeholders > 0:
-                new_v = v[i][:, :-placeholders]
-            else:
-                new_v = v[i]
-            result[i] = np.asarray(
-                np.split(new_v, 3, axis=-1))
-        return result
-    else:
-        return v
-
-
 def ibatch(iterable, size):
     sourceiter = iter(iterable)
     while True:

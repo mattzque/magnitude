@@ -37,7 +37,6 @@ PACKAGE_NAME = 'pymagnitude'
 PACKAGE_SHORT_NAME = 'magnitude'
 
 DOWNLOAD_REQ_WHEELS = [
-    ('http://download.pytorch.org/whl/cpu/', 'torch', ('0.4.1', '0.4.1.post2')),
 ]
 
 
@@ -284,7 +283,7 @@ def install_wheel(whl):
 
 def skip_wheel():
     """ Checks if a wheel install should be skipped """
-    return "SKIP_" + PACKAGE_SHORT_NAME.upper() + "_WHEEL" in os.environ
+    return True
 
 
 def installed_wheel():

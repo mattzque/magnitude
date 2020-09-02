@@ -25,7 +25,6 @@ def _clear_mmap():
 
 
 class MagnitudeTest(unittest.TestCase):
-    ELMO_PATH = "elmo.magnitude"
     MAGNITUDE_PATH = ""
     MAGNITUDE_SUBWORD_PATH = ""
     MAGNITUDE_APPROX_PATH = ""
@@ -43,32 +42,8 @@ class MagnitudeTest(unittest.TestCase):
                                        batch_size=500000)
         self.vectors_sw = Magnitude(MagnitudeTest.MAGNITUDE_SUBWORD_PATH,
                                     case_insensitive=True, eager=False)
-        self.vectors_approx = Magnitude(MagnitudeTest.MAGNITUDE_APPROX_PATH,
-                                        case_insensitive=True, eager=False)
         self.tmp_vectors = Magnitude(MagnitudeTest.MAGNITUDE_PATH,
                                      case_insensitive=True, eager=False)
-        try:
-            self.vectors_elmo = Magnitude(MagnitudeTest.ELMO_PATH,
-                                          case_insensitive=True, eager=False)
-            self.vectors_elmo_p = Magnitude(MagnitudeTest.ELMO_PATH,
-                                            case_insensitive=True, eager=False,
-                                            placeholders=2)
-            self.vectors_elmo_ngram = Magnitude(
-                MagnitudeTest.ELMO_PATH,
-                case_insensitive=True,
-                eager=False,
-                ngram_oov=True)
-            self.vectors_elmo_ngram_p = Magnitude(
-                MagnitudeTest.ELMO_PATH,
-                case_insensitive=True,
-                eager=False,
-                ngram_oov=True,
-                placeholders=2)
-            self.vectors_elmo_n = Magnitude(MagnitudeTest.ELMO_PATH,
-                                            case_insensitive=True, eager=False,
-                                            normalized=True)
-        except BaseException:
-            pass
         self.concat_1 = Magnitude(MagnitudeTest.MAGNITUDE_PATH,
                                   case_insensitive=True, eager=False)
         self.concat_2 = Magnitude(MagnitudeTest.MAGNITUDE_PATH,
@@ -95,16 +70,7 @@ class MagnitudeTest(unittest.TestCase):
         self.vectors_cs.close()
         self.vectors_batch.close()
         self.vectors_sw.close()
-        self.vectors_approx.close()
         self.tmp_vectors.close()
-        try:
-            self.vectors_elmo.close()
-            self.vectors_elmo_p.close()
-            self.vectors_elmo_ngram.close()
-            self.vectors_elmo_ngram_p.close()
-            self.vectors_elmo_n.close()
-        except BaseException:
-            pass
         self.concat_1.close()
         self.concat_2.close()
         del self.concat
@@ -1110,29 +1076,6 @@ class MagnitudeTest(unittest.TestCase):
     def test_closer_than(self):
         self.assertEqual(self.vectors.closer_than("cat", "dog"), ["cats"])
 
-    def test_most_similar_approx(self):
-        keys = [s[0] for s in self.vectors_approx.most_similar_approx(
-            "queen", topn=15)]
-        similarities = [s[1] for s in self.vectors_approx.most_similar_approx(
-            "queen", topn=15)]
-        self.assertEqual(len(keys), 15)
-        self.assertTrue(similarities[0] > .7 and similarities[-1] > .5)
-
-    @unittest.expectedFailure
-    def test_most_similar_approx_failure(self):
-        self.vectors.most_similar_approx("queen", topn=15)
-
-    def test_most_similar_approx_low_effort(self):
-        keys = [s[0] for s in self.vectors_approx.most_similar_approx(
-            "queen", topn=15, effort=.1)]
-        self.assertEqual(len(keys), 15)
-        self.assertEqual(keys[0], "princess")
-
-    def test_most_similar_analogy_approx(self):
-        keys = [s[0] for s in self.vectors_approx.most_similar_approx(
-            positive=["king", "woman"], negative=["man"], topn=15)]
-        self.assertEqual(keys[0], "queen")
-
     def test_feat_length(self):
         self.vectors_feat_2 = FeaturizerMagnitude(1000, case_insensitive=True)
         self.assertEqual(self.vectors_feat.dim, 4)
@@ -1214,180 +1157,6 @@ class MagnitudeTest(unittest.TestCase):
                 self.assertEqual(k, k2)
                 self.assertTrue(isclose(v[0], v2[0]))
 
-    def test_elmo(self):
-        self.assertEqual(len(self.vectors_elmo), 5)
-        self.assertEqual(self.vectors_elmo.dim, 768)
-        self.assertTrue(isclose(self.vectors_elmo.query("the")[0], 0.09842498))
-        self.assertTrue(isclose(self.vectors_elmo.query("uberx")[0], 0.1594867))
-        q = ["I", "saw", "a", "cat"]
-        self.assertEqual(self.vectors_elmo.query(q).shape, (4, 768))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[0][0], -0.12764566))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[3][0], -0.582507))
-        q = [["I", "saw", "a", "cat"], ["He", "went", "to", "the", "mall"]]
-        self.assertEqual(self.vectors_elmo.query(q).shape, (2, 5, 768))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[0][0][0],
-                                -0.12764566))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[0][3][0],
-                                -0.582507))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[0][4][0], 0))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[1][0][0],
-                                0.09789153))
-        self.assertTrue(isclose(self.vectors_elmo.query(q)[1][4][0],
-                                0.005302878))
-
-    def test_elmo_norm(self):
-        self.assertEqual(len(self.vectors_elmo_n), 5)
-        self.assertEqual(self.vectors_elmo_n.dim, 768)
-        self.assertTrue(isclose(self.vectors_elmo_n.query("the")[0], 0.0071634))
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_n.query("uberx")[0],
-                0.009964361))
-        q = ["I", "saw", "a", "cat"]
-        self.assertEqual(self.vectors_elmo_n.query(q).shape, (4, 768))
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_n.query(q)[0][0], -0.0059032375))
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_n.query(q)[3][0], -0.03499423))
-        q = [["I", "saw", "a", "cat"], ["He", "went", "to", "the", "mall"]]
-        self.assertEqual(self.vectors_elmo_n.query(q).shape, (2, 5, 768))
-        self.assertTrue(isclose(self.vectors_elmo_n.query(q)[0][0][0],
-                                -0.0057514487))
-        self.assertTrue(isclose(self.vectors_elmo_n.query(q)[0][3][0],
-                                -0.03564348))
-        self.assertTrue(isclose(self.vectors_elmo_n.query(q)[0][4][0], 0))
-        self.assertTrue(isclose(self.vectors_elmo_n.query(q)[1][0][0],
-                                0.005172105))
-        self.assertTrue(isclose(self.vectors_elmo_n.query(q)[1][4][0],
-                                0.00026250063))
-
-    def test_elmo_oov(self):
-        self.assertEqual(
-            self.vectors_elmo.query("uberx").shape, (768,))
-        self.assertTrue(
-            isclose(self.vectors_elmo.query("uberx")[0], 0.1594867))
-        self.assertEqual(
-            self.vectors_elmo.query(["uberx"]).shape, (1, 768))
-        self.assertTrue(
-            isclose(self.vectors_elmo.query(["uberx"])[0][0], -0.4041161))
-        self.assertEqual(
-            self.vectors_elmo.query(
-                [["uberx"], ["the", "cat"]]).shape, (2, 2, 768))
-        self.assertTrue(
-            isclose(self.vectors_elmo.query(
-                [["uberx"], ["the", "cat"]])[0][0][0], -0.4041161))
-
-    def test_elmo_placeholders(self):
-        self.assertEqual(
-            self.vectors_elmo_p.query("uberx").shape, (770,))
-        self.assertTrue(
-            isclose(self.vectors_elmo_p.query("uberx")[0], 0.1594867))
-        self.assertEqual(
-            self.vectors_elmo_p.query(["uberx"]).shape, (1, 770))
-        self.assertTrue(
-            isclose(self.vectors_elmo_p.query(["uberx"])[0][0], -0.4041161))
-        self.assertEqual(
-            self.vectors_elmo_p.query(
-                [["uberx"], ["the", "cat"]]).shape, (2, 2, 770))
-        self.assertTrue(
-            isclose(self.vectors_elmo_p.query(
-                [["uberx"], ["the", "cat"]])[0][0][0], -0.4041161))
-
-    def test_elmo_ngram_oov(self):
-        self.assertEqual(
-            self.vectors_elmo_ngram.query("uberx").shape, (768,))
-        self.assertTrue(
-            isclose(self.vectors_elmo_ngram.query("uberx")[0], -0.011485805))
-        self.assertEqual(
-            self.vectors_elmo_ngram.query(["uberx"]).shape, (1, 768))
-        self.assertTrue(
-            isclose(self.vectors_elmo_ngram.query(["uberx"])[0][0], -0.0062455))
-        self.assertEqual(
-            self.vectors_elmo_ngram.query(
-                [["uberx", "the"], ["cat"]]).shape, (2, 2, 768)
-        )
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_ngram.query(
-                    [["uberx", "the"], ["cat"]])[0][0][0], -0.0062455)
-        )
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_ngram.query(
-                    [["uberx", "the"], ["cat"]])[1][0][0], -0.0008004207)
-        )
-        self.assertTrue(
-            self.vectors_elmo.similarity(
-                "discriminatoryy",
-                "discriminnatory") < .8)
-        self.assertTrue(
-            self.vectors_elmo_ngram.similarity(
-                "discriminatoryy",
-                "discriminnatory") > .8)
-
-    def test_elmo_ngram_placeholders(self):
-        self.assertEqual(
-            self.vectors_elmo_ngram_p.query("uberx").shape, (770,))
-        self.assertTrue(
-            isclose(self.vectors_elmo_ngram_p.query("uberx")[0], -0.011485805))
-        self.assertEqual(
-            self.vectors_elmo_ngram_p.query(["uberx"]).shape, (1, 770))
-        self.assertTrue(
-            isclose(self.vectors_elmo_ngram_p.query(["uberx"])[0][0],
-                    -0.0062455))
-        self.assertEqual(
-            self.vectors_elmo_ngram_p.query(
-                [["uberx", "the"], ["cat"]]).shape, (2, 2, 770)
-        )
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_ngram_p.query(
-                    [["uberx", "the"], ["cat"]])[0][0][0], -0.0062455)
-        )
-        self.assertTrue(
-            isclose(
-                self.vectors_elmo_ngram_p.query(
-                    [["uberx", "the"], ["cat"]])[1][0][0], -0.000800420)
-        )
-
-    def test_elmo_unroll(self):
-        self.assertEqual(
-            self.vectors_elmo.unroll(self.vectors_elmo.query("a")).shape,
-            (3, 256))
-        self.assertEqual(
-            self.vectors_elmo.unroll(
-                self.vectors_elmo.query(["a", "b", "c", "d"])
-            ).shape,
-            (3, 4, 256))
-        self.assertEqual(
-            self.vectors_elmo.unroll(
-                self.vectors_elmo.query([
-                    ["a", "b", "c", "d"],
-                    ["d", "e", "f", "g"]
-                ])
-            ).shape,
-            (2, 3, 4, 256))
-
-    def test_elmo_unroll_placeholders(self):
-        self.assertEqual(
-            self.vectors_elmo_p.unroll(self.vectors_elmo_p.query("a")).shape,
-            (3, 256))
-        self.assertEqual(
-            self.vectors_elmo_p.unroll(
-                self.vectors_elmo_p.query(["a", "b", "c", "d"])
-            ).shape,
-            (3, 4, 256))
-        self.assertEqual(
-            self.vectors_elmo_p.unroll(
-                self.vectors_elmo_p.query([
-                    ["a", "b", "c", "d"],
-                    ["d", "e", "f", "g"]
-                ])
-            ).shape,
-            (2, 3, 4, 256))
-
     def test_batchify(self):
         X = [0, 1, 2, 3, 4, 5]  # noqa: N806
         y = [0, 0, 1, 1, 0, 1]
@@ -1465,16 +1234,8 @@ if __name__ == '__main__':
         help="path to Google News magnitude file with subword information",
         required=True,
         type=str)
-    parser.add_argument(
-        "-a", "--approx-input",
-        help="path to Google News magnitude file with a approximate nearest \
-         neighbors index",
-        required=True,
-        type=str)
     parser.add_argument('unittest_args', nargs='*')
     args = parser.parse_args()
     MagnitudeTest.MAGNITUDE_PATH = args.input
     MagnitudeTest.MAGNITUDE_SUBWORD_PATH = args.subword_input
-    MagnitudeTest.MAGNITUDE_APPROX_PATH = args.approx_input
-    _clear_mmap()
     unittest.main(argv=[sys.argv[0]] + args.unittest_args)
